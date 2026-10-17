@@ -1,0 +1,70 @@
+#!/usr/bin/python3 -I
+# r8q: draw the under-display fingerprint target while droidian-fpd waits for a finger.
+import gi
+gi.require_version("Gtk", "3.0")
+gi.require_version("GtkLayerShell", "0.1")
+from gi.repository import Gtk, Gdk, GLib, Gio, GtkLayerShell
+
+W, H = 1080, 2400
+PX_PER_MM = 2400 / 150.5
+ACTIVE = ("ENROLLING", "IDENTIFYING", "VERIFYING")
+
+def sensor_px():
+    try:
+        p = [float(x) for x in open("/sys/class/fingerprint/fingerprint/position").read().split(",")]
+        bottom_mm, xoff_mm, diam_mm = p[0], p[1], p[2]
+    except Exception:
+        bottom_mm, xoff_mm, diam_mm = 11.41, 0.0, 9.1
+    return W / 2 + xoff_mm * PX_PER_MM, H - bottom_mm * PX_PER_MM, diam_mm * PX_PER_MM / 2
+
+class Overlay(Gtk.Window):
+    def __init__(self):
+        super().__init__()
+        cx, cy, r = sensor_px()
+        mon = Gdk.Display.get_default().get_monitor(0).get_geometry()
+        k = mon.width / W                      # logical px per physical px
+        self.r = r * k * 1.15
+        size = int(self.r * 2 + 4)
+        GtkLayerShell.init_for_window(self)
+        GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
+        GtkLayerShell.set_namespace(self, "r8q-udfps")
+        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, True)
+        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
+        GtkLayerShell.set_margin(self, GtkLayerShell.Edge.BOTTOM, int((H - cy) * k - size / 2))
+        GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, int(cx * k - size / 2))
+        GtkLayerShell.set_exclusive_zone(self, -1)
+        GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
+        self.set_size_request(size, size)
+        self.set_app_paintable(True)
+        vis = self.get_screen().get_rgba_visual()
+        if vis:
+            self.set_visual(vis)
+        da = Gtk.DrawingArea()
+        da.connect("draw", self.draw)
+        self.add(da)
+
+    def draw(self, w, cr):
+        cr.set_source_rgba(0, 0, 0, 0)
+        cr.set_operator(0)  # CLEAR
+        cr.paint()
+        cr.set_operator(2)  # OVER
+        a = w.get_allocated_width() / 2
+        cr.set_source_rgba(1, 1, 1, 1)
+        cr.arc(a, a, self.r, 0, 6.2832)
+        cr.fill()
+
+def main():
+    ov = Overlay()
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+    def on_state(conn, sender, path, iface, sig, params):
+        st = params.unpack()[0] if params.n_children() else ""
+        if any(a in st for a in ACTIVE):
+            ov.show_all()
+        else:
+            ov.hide()
+    bus.signal_subscribe(None, "org.droidian.fingerprint", "StateChanged",
+                         "/org/droidian/fingerprint", None, 0, on_state)
+    Gtk.main()
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,17 @@
+diff --git a/src/flashlightd.vala b/src/flashlightd.vala
+index c5e948c..a5b6367 100644
+--- a/src/flashlightd.vala
++++ b/src/flashlightd.vala
+@@ -166,6 +166,12 @@ void main (string[] args) {
+             }
+         }
+ 
++        // r8q: Samsung Snapdragon (KTD2692 rear_flash) takes the same 1/0
++        // protocol as Exynos; any other value fires full-current FLASH mode.
++        if (FileUtils.test ("/usr/lib/droidian/device/flashlightd-exynos", FileTest.EXISTS)) {
++            FlashlightServer.is_exynos = true;
++        }
++
+         if (FileUtils.test (flashlight_sysfs_file, FileTest.EXISTS)) {
+             FlashlightServer.sysfs = true;
+         }

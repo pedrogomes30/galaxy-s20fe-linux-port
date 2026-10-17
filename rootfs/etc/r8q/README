@@ -1,0 +1,3 @@
+Opções de depuração do r8q (crie o arquivo para ativar, reinicie):
+  /etc/r8q/usb-serial-debug  -> terminal root sem senha pela USB (/dev/ttyGS0)
+  /etc/r8q/netconsole        -> log do kernel pela rede USB para 172.16.42.14:6666

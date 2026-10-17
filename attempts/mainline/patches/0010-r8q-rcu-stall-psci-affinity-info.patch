@@ -1,0 +1,38 @@
+--- a/kernel/rcu/tree_stall.h
++++ b/kernel/rcu/tree_stall.h
+@@ -515,6 +515,27 @@
+  *
+  * Also print out idle info.
+  */
++#ifdef CONFIG_ARM64
++#include <linux/psci.h>
++#include <asm/smp.h>
++/*
++ * r8q: ask the firmware whether the stalled CPU is still powered. A CPU that
++ * ignores pseudo-NMIs is not executing NS-EL1: PSCI AFFINITY_INFO tells apart
++ * "powered off behind our back" (1=OFF) from "on, but held in EL2/EL3" (0=ON).
++ */
++static void r8q_print_psci_state(int cpu)
++{
++	int st = -99;
++
++	if (psci_ops.affinity_info)
++		st = psci_ops.affinity_info(cpu_logical_map(cpu), 0);
++	pr_err("rcu: r8q: cpu%d MPIDR=%#llx PSCI AFFINITY_INFO=%d (0=ON 1=OFF 2=ON_PENDING)\n",
++	       cpu, cpu_logical_map(cpu), st);
++}
++#else
++static inline void r8q_print_psci_state(int cpu) { }
++#endif
++
+ static void print_cpu_stall_info(int cpu)
+ {
+ 	unsigned long delta;
+@@ -563,6 +584,7 @@
+ 	       falsepositive ? " (false positive?)" : "");
+ 
+ 	print_cpu_stat_info(cpu);
++	r8q_print_psci_state(cpu);
+ }
+ 
+ /* Complain about starvation of grace-period kthread.  */

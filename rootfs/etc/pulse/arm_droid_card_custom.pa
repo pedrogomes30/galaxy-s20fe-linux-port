@@ -1,0 +1,4 @@
+load-module module-droid-card quirks=+no_hw_volume module_id=hidl_compat config=/etc/pulse/r8q/audio_policy_configuration.xml rate=48000 voice_virtual_stream=true
+
+# r8q: no 3.5mm jack; droid source otherwise starts on input-wired_headset (dead backend, zeros)
+set-source-port source.droid input-builtin_mic

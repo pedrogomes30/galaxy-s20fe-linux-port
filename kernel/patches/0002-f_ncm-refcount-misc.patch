@@ -1,0 +1,63 @@
+diff --git a/drivers/usb/gadget/function/f_ncm.c b/drivers/usb/gadget/function/f_ncm.c
+index 0368e19ec..aa68cfd16 100644
+--- a/drivers/usb/gadget/function/f_ncm.c
++++ b/drivers/usb/gadget/function/f_ncm.c
+@@ -1748,14 +1748,29 @@ static void ncm_work(struct work_struct *data)
+ 	kobject_uevent_env(&mirrorlink_device.this_device->kobj, KOBJ_CHANGE, uevent_envp);
+ }
+ 
++static DEFINE_MUTEX(ncm_misc_lock);
++static int ncm_misc_refcnt;
++static bool ncm_misc_registered;
++
+ static int ncm_function_init(void)
+ {
+ 	struct ncm_dev *dev;
+ 	int ret = 0;
+ 
++	mutex_lock(&ncm_misc_lock);
++	if (ncm_misc_refcnt++) {
++		/* already registered by another instance: re-registering the
++		 * same miscdevice re-inits its list node and corrupts misc_list */
++		mutex_unlock(&ncm_misc_lock);
++		return 0;
++	}
++
+ 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+-	if (!dev)
++	if (!dev) {
++		ncm_misc_refcnt--;
++		mutex_unlock(&ncm_misc_lock);
+ 		return -ENOMEM;
++	}
+ 
+ 	INIT_WORK(&dev->work, ncm_work);
+ 
+@@ -1764,14 +1779,26 @@ static int ncm_function_init(void)
+ 	ret = misc_register(&mirrorlink_device);
+ 	if (ret)
+ 		pr_info("usb: %s - usb_ncm misc driver fail - ret:%d\n", __func__, ret);
++	else
++		ncm_misc_registered = true;
++	mutex_unlock(&ncm_misc_lock);
+ 	return 0;
+ }
+ 
+ static void ncm_function_cleanup(void)
+ {
+-	misc_deregister(&mirrorlink_device);
++	mutex_lock(&ncm_misc_lock);
++	if (!ncm_misc_refcnt || --ncm_misc_refcnt) {
++		mutex_unlock(&ncm_misc_lock);
++		return;
++	}
++	if (ncm_misc_registered) {
++		misc_deregister(&mirrorlink_device);
++		ncm_misc_registered = false;
++	}
+ 	kfree(_ncm_dev);
+ 	_ncm_dev = NULL;
++	mutex_unlock(&ncm_misc_lock);
+ }
+ #endif
+ 

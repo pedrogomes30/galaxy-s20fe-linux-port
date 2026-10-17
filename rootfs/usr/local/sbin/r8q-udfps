@@ -1,0 +1,169 @@
+#!/usr/bin/python3 -I
+# r8q under-display fingerprint bridge (root).
+# Android's SystemUI normally: enables touch FOD detection while a fingerprint
+# operation runs, and on finger down/up tells the Samsung HAL via
+# ISehBiometricsFingerprint.sehRequest(SEM_REQUEST_TOUCH_EVENT=22, PRESSED=2/RELEASED=1)
+# while lighting the sensor area. droidian-fpd does none of that; this does.
+import os, select, struct, subprocess, sys, threading, time
+from gi.repository import Gio, GLib
+
+TSP_CMD = "/sys/class/sec/tsp/cmd"
+SCRUB = "/sys/class/sec/tsp/scrub_pos"
+BL = "/sys/class/backlight/panel/brightness"
+HAL = "vendor.samsung.hardware.biometrics.fingerprint@3.0::ISehBiometricsFingerprint/default"
+ACTIVE = ("ENROLLING", "IDENTIFYING", "VERIFYING")
+FOD_PRESS, FOD_RELEASE, FOD_OUT = 15, 16, 17
+W, H, TMAX = 1080, 2400, 4095
+PX_PER_MM = 2400 / 150.5          # 6.5" 20:9 panel
+
+def log(*a):
+    print(*a, flush=True)
+
+def sensor_rect_px():
+    try:
+        p = [float(x) for x in open("/sys/class/fingerprint/fingerprint/position").read().split(",")]
+        bottom_mm, xoff_mm, area_mm = p[0], p[1], p[4]
+    except Exception:
+        bottom_mm, xoff_mm, area_mm = 11.41, 0.0, 14.8
+    cx = W / 2 + xoff_mm * PX_PER_MM
+    cy = H - bottom_mm * PX_PER_MM
+    half = area_mm * PX_PER_MM / 2
+    return cx, cy, half
+
+def tsp(cmd):
+    try:
+        with open(TSP_CMD, "w") as f:
+            f.write(cmd)
+        r = open("/sys/class/sec/tsp/cmd_result").read().strip()
+        log("tsp", cmd, "->", r)
+    except OSError as e:
+        log("tsp", cmd, "failed:", e)
+
+def seh(param):
+    r = subprocess.run(["binder-call", "-d", "/dev/hwbinder", HAL, "11", "22", str(param),
+                        "[ 0:8 ]", "reply", "i32", "[ i8 ]"], capture_output=True, text=True)
+    log("sehRequest(22,%d) ->" % param, r.stdout.strip() or r.stderr.strip())
+
+class Bridge:
+    def __init__(self):
+        self.active = False
+        self.pressed = False
+        self.saved_bl = None
+        cx, cy, half = sensor_rect_px()
+        sx, sy = TMAX / W, TMAX / H
+        self.rect = (int((cx - half) * sx), int((cy - half) * sy),
+                     int((cx + half) * sx), int((cy + half) * sy))
+        log("sensor center px=(%d,%d) half=%d rect(tsp)=%s" % (cx, cy, half, self.rect))
+        self.lock = threading.Lock()
+        threading.Thread(target=self.watch_scrub, daemon=True).start()
+        threading.Thread(target=self.watch_touch, daemon=True).start()
+
+    def set_active(self, on):
+        if on == self.active:
+            return
+        self.active = on
+        if on:
+            tsp("set_fod_rect,%d,%d,%d,%d" % self.rect)
+            tsp("fod_enable,1,1,0")
+        else:
+            with self.lock:
+                if self.pressed:
+                    self.release()
+            tsp("fod_enable,0,0,0")
+
+    def press(self):
+        self.pressed = True
+        try:
+            self.saved_bl = open(BL).read().strip()
+            open(BL, "w").write("486")
+        except OSError:
+            pass
+        time.sleep(0.03)
+        seh(2)
+
+    def release(self):
+        self.pressed = False
+        seh(1)
+        if self.saved_bl is not None:
+            try:
+                open(BL, "w").write(self.saved_bl)
+            except OSError:
+                pass
+            self.saved_bl = None
+
+    def finger(self, down, src):
+        with self.lock:
+            if not self.active:
+                return
+            if down and not self.pressed:
+                log("finger down (%s)" % src); self.press()
+            elif not down and self.pressed:
+                log("finger up (%s)" % src); self.release()
+
+    def watch_touch(self):
+        # Fallback: plain multitouch events from the panel, independent of the
+        # touch IC's FOD gesture reporting. Not grabbed: phoc keeps working.
+        dev = None
+        for n in sorted(os.listdir("/sys/class/input")):
+            try:
+                if open("/sys/class/input/%s/device/name" % n).read().strip() == "sec_touchscreen" and n.startswith("event"):
+                    dev = "/dev/input/" + n
+            except OSError:
+                pass
+        if not dev:
+            log("sec_touchscreen not found"); return
+        log("touch fallback on", dev)
+        l, t, r, b = self.rect
+        slots = {}; slot = 0
+        f = open(dev, "rb", buffering=0)
+        while True:
+            data = f.read(24)
+            if len(data) < 24:
+                continue
+            _, _, typ, code, val = struct.unpack("qqHHi", data)
+            if typ == 3:
+                if code == 0x2f: slot = val
+                elif code == 0x39:
+                    if val < 0: slots.pop(slot, None)
+                    else: slots[slot] = [None, None]
+                elif code in (0x35, 0x36) and slot in slots:
+                    slots[slot][code - 0x35] = val
+            elif typ == 0 and code == 0:
+                inside = any(x is not None and y is not None and l <= x <= r and t <= y <= b
+                             for x, y in slots.values())
+                self.finger(inside, "touch")
+
+    def watch_scrub(self):
+        f = open(SCRUB, "r")
+        f.read()
+        p = select.poll()
+        p.register(f, select.POLLPRI | select.POLLERR)
+        while True:
+            p.poll()
+            f.seek(0)
+            v = f.read().split()
+            if not v:
+                continue
+            ev = int(v[0])
+            log("scrub_pos", v, "active=%s" % self.active)
+            if not self.active:
+                continue
+            if ev == FOD_PRESS:
+                self.finger(True, "fod")
+            elif ev in (FOD_RELEASE, FOD_OUT):
+                self.finger(False, "fod")
+
+def main():
+    b = Bridge()
+    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+    def on_state(conn, sender, path, iface, sig, params):
+        st = params.unpack()[0] if params.n_children() else ""
+        log("fpd state:", st)
+        b.set_active(any(a in st for a in ACTIVE))
+    bus.signal_subscribe(None, "org.droidian.fingerprint", "StateChanged",
+                         "/org/droidian/fingerprint", None, 0, on_state)
+    tsp("fod_enable,0,0,0")
+    GLib.MainLoop().run()
+
+if __name__ == "__main__":
+    main()

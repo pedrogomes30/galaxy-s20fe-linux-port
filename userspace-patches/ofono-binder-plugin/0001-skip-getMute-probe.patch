@@ -1,0 +1,22 @@
+diff --git a/src/binder_call_volume.c b/src/binder_call_volume.c
+index 78e40bb..b14f38d 100644
+--- a/src/binder_call_volume.c
++++ b/src/binder_call_volume.c
+@@ -165,9 +165,14 @@ binder_call_volume_register(
+     self->register_id = 0;
+     ofono_call_volume_register(self->v);
+ 
+-    /* Probe the mute state */
+-    binder_submit_request2(self->g, RADIO_REQ_GET_MUTE,
+-        binder_call_volume_query_mute_cb, NULL, self);
++    /*
++     * r8q: do not probe the mute state. Samsung libsec-ril (SND-MGR)
++     * crashes when completing RIL_REQUEST_GET_MUTE (segfault / scudo abort
++     * in its EventScheduler thread) right after radio power-on, so rild
++     * restarts in a loop and the modem never stays online. Assume unmuted.
++     */
++    ofono_call_volume_set_muted(self->v, FALSE);
++    (void) binder_call_volume_query_mute_cb;
+ 
+     return G_SOURCE_REMOVE;
+ }

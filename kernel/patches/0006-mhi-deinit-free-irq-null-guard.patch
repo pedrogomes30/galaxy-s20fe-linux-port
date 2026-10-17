@@ -1,0 +1,21 @@
+diff --git a/drivers/bus/mhi/core/mhi_init.c b/drivers/bus/mhi/core/mhi_init.c
+index 4066e6496..0abd4c9d0 100644
+--- a/drivers/bus/mhi/core/mhi_init.c
++++ b/drivers/bus/mhi/core/mhi_init.c
+@@ -410,6 +410,16 @@ void mhi_deinit_free_irq(struct mhi_controller *mhi_cntrl)
+ 	int i;
+ 	struct mhi_event *mhi_event = mhi_cntrl->mhi_event;
+ 
++	/*
++	 * r8q: after a failed external-modem SSR re-init (pci_alloc_irq_vectors
++	 * -ENOSPC) the irq array is gone; tearing down again dereferenced NULL
++	 * and panicked the whole phone. Nothing to free in that case.
++	 */
++	if (!mhi_cntrl->irq) {
++		MHI_CNTRL_ERR("irq vectors already released, skipping free_irq\n");
++		return;
++	}
++
+ 	for (i = 0; i < mhi_cntrl->total_ev_rings; i++, mhi_event++) {
+ 		if (!mhi_event->request_irq)
+ 			continue;

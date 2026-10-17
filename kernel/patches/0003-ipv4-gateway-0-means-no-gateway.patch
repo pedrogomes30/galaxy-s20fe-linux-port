@@ -1,0 +1,31 @@
+diff --git a/net/ipv4/fib_frontend.c b/net/ipv4/fib_frontend.c
+index 6950b55df..56063eb34 100644
+--- a/net/ipv4/fib_frontend.c
++++ b/net/ipv4/fib_frontend.c
+@@ -755,8 +755,10 @@ static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
+ 			break;
+ 		case RTA_GATEWAY:
+ 			has_gw = true;
+-			cfg->fc_gw_family = AF_INET;
+ 			cfg->fc_gw4 = nla_get_be32(attr);
++			/* a 0.0.0.0 gateway means "no gateway" (as upstream) */
++			if (cfg->fc_gw4)
++				cfg->fc_gw_family = AF_INET;
+ 			break;
+ 		case RTA_VIA:
+ 			has_via = true;
+diff --git a/net/ipv4/fib_semantics.c b/net/ipv4/fib_semantics.c
+index 6db883e95..682455e06 100644
+--- a/net/ipv4/fib_semantics.c
++++ b/net/ipv4/fib_semantics.c
+@@ -659,8 +659,9 @@ static int fib_get_nhs(struct fib_info *fi, struct rtnexthop *rtnh,
+ 				return -EINVAL;
+ 			}
+ 			if (nla) {
+-				fib_cfg.fc_gw_family = AF_INET;
+ 				fib_cfg.fc_gw4 = nla_get_in_addr(nla);
++				if (fib_cfg.fc_gw4)
++					fib_cfg.fc_gw_family = AF_INET;
+ 			} else if (nlav) {
+ 				ret = fib_gw_from_via(&fib_cfg, nlav, extack);
+ 				if (ret)

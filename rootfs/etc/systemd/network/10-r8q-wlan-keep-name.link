@@ -1,0 +1,7 @@
+# r8q: keep kernel names for the QCA6390 Wi-Fi interfaces (wlan0/swlan0/p2p0)
+[Match]
+OriginalName=wlan* swlan* p2p*
+
+[Link]
+NamePolicy=
+MACAddressPolicy=none

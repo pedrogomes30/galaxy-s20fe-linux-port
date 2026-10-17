@@ -1,0 +1,20 @@
+--- a/drivers/ufs/host/ufs-qcom.c
++++ b/drivers/ufs/host/ufs-qcom.c
+@@ -1389,7 +1389,7 @@
+ 	hba->caps |= UFSHCD_CAP_CLK_GATING | UFSHCD_CAP_HIBERN8_WITH_CLK_GATING;
+ 	hba->caps |= UFSHCD_CAP_CLK_SCALING | UFSHCD_CAP_WB_WITH_CLK_SCALING;
+ 	hba->caps |= UFSHCD_CAP_AUTO_BKOPS_SUSPEND;
+-	hba->caps |= UFSHCD_CAP_WB_EN;
++	/* r8q: Samsung KLUDG4UHDB rejects dCurWriteBoosterBufferSize (idn 31) -> keep WriteBooster off */
+ 	hba->caps |= UFSHCD_CAP_AGGR_POWER_COLLAPSE;
+ 	hba->caps |= UFSHCD_CAP_RPM_AUTOSUSPEND;
+ 
+@@ -1680,7 +1680,7 @@
+ 		/* Failure is non-fatal */
+ 		dev_warn(dev, "Failed to configure the testbus %d\n", err);
+ 
+-	hba->caps |= UFSHCD_CAP_WB_EN;
++	/* r8q: Samsung KLUDG4UHDB rejects dCurWriteBoosterBufferSize (idn 31) -> keep WriteBooster off */
+ 
+ 	ufs_qcom_advertise_quirks(hba);
+ 	host->hba->quirks &= ~UFSHCD_QUIRK_REINIT_AFTER_MAX_GEAR_SWITCH;

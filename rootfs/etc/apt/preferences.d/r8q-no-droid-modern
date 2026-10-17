@@ -1,0 +1,4 @@
+# r8q: modern droid module segfaults with the Samsung API-2.0 audio HAL
+Package: pulseaudio-modules-droid-modern pulseaudio-modules-droid
+Pin: release *
+Pin-Priority: -1

@@ -1,0 +1,26 @@
+diff --git a/ofono/src/sim.c b/ofono/src/sim.c
+index f848b802..724388e2 100644
+--- a/ofono/src/sim.c
++++ b/ofono/src/sim.c
+@@ -3975,13 +3975,19 @@ end:
+ 	 * Notify any watchers, after this point, all future watchers will be
+ 	 * immediately notified with the session ID.
+ 	 */
++	/*
++	 * r8q: a watcher may remove itself from session->watches while
++	 * being notified (simfs does this on failure via
++	 * sim_fs_end_current -> __ofono_sim_remove_session_watch), which
++	 * frees the current list node. Advance before notifying.
++	 */
+ 	while (iter) {
+ 		struct ofono_watchlist_item *item = iter->data;
+ 		ofono_sim_session_event_cb_t notify = item->notify;
+-
+-		notify(active, session->session_id, item->notify_data);
++		void *notify_data = item->notify_data;
+ 
+ 		iter = g_slist_next(iter);
++		notify(active, session->session_id, notify_data);
+ 	}
+ }
+ 

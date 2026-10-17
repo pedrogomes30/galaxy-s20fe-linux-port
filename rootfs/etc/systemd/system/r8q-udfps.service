@@ -1,0 +1,12 @@
+[Unit]
+Description=r8q: under-display fingerprint bridge (touch FOD -> Samsung HAL)
+After=droidian-fpd.service
+Wants=droidian-fpd.service
+
+[Service]
+ExecStart=/usr/local/sbin/r8q-udfps
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

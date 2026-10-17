@@ -1,0 +1,17 @@
+--- a/ofono2mm/mm_modem.py	2026-10-17 17:17:25
++++ b/ofono2mm/mm_modem.py	2026-10-17 17:17:25
+@@ -106,6 +106,14 @@
+         self.ofono_interfaces.update({
+             iface: self.ofono_proxy[iface]
+         })
++
++        # r8q: GetProperties on these makes ofono query the network (call
++        # barring/forwarding/CLIR...). Samsung libsec-ril double-frees on the
++        # error reply (scudo abort in thread ESAR) -> rild restarts -> modem
++        # drops offline in a loop. ofono2mm does not use them: skip.
++        if iface in ('org.ofono.CallBarring', 'org.ofono.CallForwarding', 'org.ofono.CallSettings'):
++            self.ofono_interface_props.update({iface: {}})
++            return
+ 
+         try:
+             self.ofono_interface_props.update({

@@ -1,0 +1,12 @@
+[Unit]
+Description=r8q: keep the modem online and on LTE after rild restarts
+After=ofono.service NetworkManager.service
+Wants=ofono.service
+
+[Service]
+ExecStart=/usr/local/sbin/r8q-modem-keeper
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=r8q: vendor audio HAL (android.hardware.audio.service) inside the Android container
+Requires=lxc@android.service
+After=lxc@android.service
+PartOf=lxc@android.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/waitforservice init.svc.hwservicemanager
+ExecStart=/usr/bin/lxc-attach -n android -- /vendor/bin/hw/android.hardware.audio.service
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

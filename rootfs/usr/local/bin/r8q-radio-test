@@ -1,0 +1,14 @@
+#!/bin/sh
+# Wait for ofono's /ril_0, set Online=true, and watch whether rild survives.
+# usage: r8q-radio-test [seconds]
+T=${1:-48}
+prop() { dbus-send --system --print-reply --dest=org.ofono /ril_0 "$1.GetProperties" 2>/dev/null | grep -A1 "\"$2\"" | tail -1 | awk '{print $NF}' | tr -d '"'; }
+t=0; until [ -n "$(prop org.ofono.Modem Powered)" ] || [ $t -ge 90 ]; do sleep 2; t=$((t+2)); done
+echo "modem visible after ${t}s"
+P0=$(pgrep -f /vendor/bin/hw/rild | head -1)
+dbus-send --system --print-reply --dest=org.ofono /ril_0 org.ofono.Modem.SetProperty string:Online variant:boolean:true >/dev/null 2>&1
+i=0; while [ $i -lt $T ]; do
+  sleep 8; i=$((i+8))
+  echo "t=$i online=$(prop org.ofono.Modem Online) reg=$(prop org.ofono.NetworkRegistration Status)/$(prop org.ofono.NetworkRegistration Technology) rild=$(pgrep -f /vendor/bin/hw/rild | head -1)"
+done
+echo "rild at start=$P0"

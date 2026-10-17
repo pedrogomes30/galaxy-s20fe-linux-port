@@ -1,0 +1,2 @@
+# r8q: boot image is built/flashed by hand (custom 4.19 kernel); never auto-flash
+FLASH_BOOTIMAGE="no"

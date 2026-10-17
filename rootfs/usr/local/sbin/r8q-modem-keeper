@@ -1,0 +1,27 @@
+#!/bin/sh
+# r8q: Samsung rild restarts once per boot (ofono "slot1 binder service died");
+# ofono then recreates /ril_0 with Online=false and TechnologyPreference=umts,
+# and nothing brings it back. Keep the modem online (unless airplane mode / WWAN
+# radio is off) and prefer LTE.
+M=/ril_0
+prop() { dbus-send --system --print-reply --dest=org.ofono $M "$1.GetProperties" 2>/dev/null \
+         | grep -A1 "\"$2\"" | tail -1 | awk '{print $NF}' | tr -d '"'; }
+while :; do
+  if [ "$(nmcli radio wwan 2>/dev/null)" = "enabled" ] && \
+     [ "$(prop org.ofono.Modem Powered)" = "true" ] && \
+     [ "$(prop org.ofono.SimManager Present)" = "true" ]; then
+    if [ "$(prop org.ofono.Modem Online)" = "false" ]; then
+      echo "modem offline -> setting Online=true"
+      dbus-send --system --print-reply --dest=org.ofono $M org.ofono.Modem.SetProperty \
+        string:Online variant:boolean:true >/dev/null 2>&1
+      sleep 5
+    fi
+    T=$(prop org.ofono.RadioSettings TechnologyPreference)
+    if [ -n "$T" ] && [ "$T" != "lte" ]; then
+      echo "TechnologyPreference=$T -> lte"
+      dbus-send --system --print-reply --dest=org.ofono $M org.ofono.RadioSettings.SetProperty \
+        string:TechnologyPreference variant:string:lte >/dev/null 2>&1
+    fi
+  fi
+  sleep 15
+done

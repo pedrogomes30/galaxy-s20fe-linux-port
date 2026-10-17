@@ -1,0 +1,57 @@
+#!/bin/sh
+# r8q-check: verifica se as correções do S20 FE (r8q) continuam no lugar.
+# Rode como root depois de atualizações:  sudo r8q-check
+ok=0; bad=0
+pass() { printf "  OK    %s\n" "$1"; ok=$((ok+1)); }
+fail() { printf "  FALHA %s\n" "$1"; bad=$((bad+1)); }
+chk()  { if eval "$2" >/dev/null 2>&1; then pass "$1"; else fail "$1"; fi; }
+
+echo "== Kernel e boot"
+# /etc/r8q/expected-boot: "<tamanho-em-bytes> <sha256-16-primeiros-hex>" da boot.img gravada
+# (gerado por:  echo "$(stat -c%s boot.img) $(sha256sum boot.img | cut -c1-16)" > /etc/r8q/expected-boot)
+chk "kernel downstream 4.19 (r8q)"          'uname -r | grep -q "^4\.19\."'
+if [ -r /etc/r8q/expected-boot ]; then
+  read BOOT_SIZE BOOT_SHA < /etc/r8q/expected-boot
+  chk "partição boot = imagem esperada"    '[ "$(head -c $BOOT_SIZE /dev/disk/by-partlabel/boot | sha256sum | cut -c1-16)" = "$BOOT_SHA" ]'
+else
+  printf "  --    partição boot (sem /etc/r8q/expected-boot)\n"
+fi
+chk "flash-bootimage desligado"             'grep -q FLASH_BOOTIMAGE=\"no\" /etc/flash-bootimage/99-r8q-no-autoflash'
+
+echo "== Pacotes protegidos"
+for p in ofono ofono-binder-plugin libofonobinderpluginext ofono2mm flashlightd pulseaudio-modules-droid-jb2q; do
+  chk "retido: $p" "apt-mark showhold | grep -qx $p"
+done
+chk "ofono r8q1 instalado"                   'dpkg-query -W -f="\${Version}" ofono | grep -q r8q1'
+for f in /usr/lib/aarch64-linux-gnu/ofono/plugins/binderplugin.so /usr/lib/ofono2mm/ofono2mm/mm_modem.py \
+         /usr/libexec/flashlightd /usr/lib/pulse-14.2/modules/module-droid-hidl.so; do
+  chk "desvio: $f" "dpkg-divert --list | grep -q \" $f \""
+done
+
+echo "== Configurações"
+chk "oFono: radioInterface 1.4"              'grep -q "radioInterface = 1.4" /etc/ofono/binder.d/50-r8q.conf'
+chk "áudio: volume por software"             'grep -q no_hw_volume /etc/pulse/arm_droid_card_custom.pa'
+chk "áudio: microfone embutido padrão"       'grep -q input-builtin_mic /etc/pulse/arm_droid_card_custom.pa'
+chk "áudio: política sem P2"                 '! grep -q "Wired Headset" /etc/pulse/r8q/audio_policy_configuration.xml'
+chk "vibração 10000"                         '[ -f /etc/tmpfiles.d/52-r8q-vibrator.conf ]'
+chk "lanterna (KTD2692)"                     '[ -f /etc/udev/rules.d/72-r8q-torch.rules ] && [ -f /usr/lib/droidian/device/flashlightd-exynos ]'
+chk "Phosh se recupera de falha"            '[ -f /etc/systemd/system/phosh.service.d/90-r8q-robust.conf ]'
+chk "getty@tty1 mascarado"                  '[ "$(systemctl is-enabled getty@tty1 2>/dev/null)" = masked ]'
+chk "console do kernel silencioso"          '[ -f /etc/sysctl.d/10-r8q-printk.conf ]'
+chk "sem root pela USB"                     '[ ! -e /etc/r8q/usb-serial-debug ] && ! systemctl -q is-active serial-getty@ttyGS0'
+chk "netconsole desligado"                  '[ ! -e /etc/r8q/netconsole ]'
+
+echo "== Serviços"
+for s in ssh ofono ModemManager r8q-modem-keeper r8q-audio-hal r8q-usbdebug bluetooth bluebinder phosh droidian-fpd; do
+  chk "ativo: $s" "systemctl -q is-active $s"
+done
+
+echo "== Modem"
+chk "SIM presente"   'dbus-send --system --print-reply --dest=org.ofono /ril_0 org.ofono.SimManager.GetProperties | grep -A1 "\"Present\"" | grep -q true'
+chk "rádio ligado"   'dbus-send --system --print-reply --dest=org.ofono /ril_0 org.ofono.Modem.GetProperties | grep -A1 "\"Online\"" | grep -q true'
+chk "registrado"     'dbus-send --system --print-reply --dest=org.ofono /ril_0 org.ofono.NetworkRegistration.GetProperties | grep -A1 "\"Status\"" | grep -q registered'
+N=$(lxc-attach -n android -- /system/bin/logcat -d -b crash 2>/dev/null | grep -c "Fatal signal.*rild")
+chk "rild sem quedas neste boot ($N)" '[ "$N" -eq 0 ]'
+
+echo; echo "Resultado: $ok OK, $bad FALHA"
+[ $bad -eq 0 ]

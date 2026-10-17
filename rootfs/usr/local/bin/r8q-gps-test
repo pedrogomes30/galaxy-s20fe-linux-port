@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+# Ask geoclue for location (accuracy EXACT) and print every update for N seconds.
+import sys, time
+from gi.repository import Gio, GLib
+secs = int(sys.argv[1]) if len(sys.argv) > 1 else 150
+bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+def call(path, iface, meth, args=None, rt=None):
+    return bus.call_sync('org.freedesktop.GeoClue2', path, iface, meth, args, rt, 0, -1)
+cp = call('/org/freedesktop/GeoClue2/Manager', 'org.freedesktop.GeoClue2.Manager', 'GetClient', None, GLib.VariantType('(o)')).unpack()[0]
+P = 'org.freedesktop.DBus.Properties'; C = 'org.freedesktop.GeoClue2.Client'
+call(cp, P, 'Set', GLib.Variant('(ssv)', (C, 'DesktopId', GLib.Variant('s', 'sm.puri.Phosh'))))
+call(cp, P, 'Set', GLib.Variant('(ssv)', (C, 'RequestedAccuracyLevel', GLib.Variant('u', 8))))
+call(cp, P, 'Set', GLib.Variant('(ssv)', (C, 'DistanceThreshold', GLib.Variant('u', 0))))
+t0 = time.time()
+def on_sig(conn, sender, path, iface, sig, params):
+    if sig != 'LocationUpdated': return
+    lp = params.unpack()[1]
+    g = lambda k: call(lp, P, 'Get', GLib.Variant('(ss)', ('org.freedesktop.GeoClue2.Location', k))).unpack()[0]
+    print('t=%5.1fs lat=%.5f lon=%.5f acc=%.0fm alt=%s desc=%s' % (time.time()-t0, g('Latitude'), g('Longitude'), g('Accuracy'), g('Altitude'), g('Description')), flush=True)
+bus.signal_subscribe('org.freedesktop.GeoClue2', C, 'LocationUpdated', cp, None, 0, on_sig)
+call(cp, C, 'Start')
+print('started client', cp, flush=True)
+loop = GLib.MainLoop(); GLib.timeout_add_seconds(secs, loop.quit); loop.run()
+call(cp, C, 'Stop'); print('done')

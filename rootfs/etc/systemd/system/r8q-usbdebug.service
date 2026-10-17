@@ -1,0 +1,13 @@
+[Unit]
+Description=r8q USB debug gadget (ACM shell + NCM)
+DefaultDependencies=no
+After=sys-kernel-config.mount systemd-udevd.service
+Before=lxc@android.service mtp-configfs@rndis.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/r8q-usbdebug.sh
+
+[Install]
+WantedBy=sysinit.target
